@@ -169,6 +169,27 @@
   .msg.ok   { background: var(--ok-soft);   color: var(--ok); }
   .msg b { font-weight: 600; }
 
+  .repaso {
+    display: flex; flex-direction: column; gap: 11px;
+    background: var(--sunk); border: 1px solid var(--line);
+    border-radius: 9px; padding: 14px 15px;
+  }
+  .repasoTitulo { display: flex; flex-direction: column; gap: 4px; }
+  .repaso .palabras { gap: 7px; }
+  .ficha {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: var(--bad-soft); color: var(--bad);
+    border-radius: 6px; padding: 4px 5px 4px 9px; font-size: 15px;
+  }
+  .ficha button {
+    font: inherit; font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    cursor: pointer; border: 1px solid currentColor; background: transparent;
+    color: inherit; border-radius: 5px; padding: 2px 7px;
+  }
+  .ficha button:hover { background: rgba(0,0,0,.06); }
+  .ficha[data-estado="ok"] { background: var(--ok-soft); color: var(--ok); }
+
   details.log summary {
     cursor: pointer; font-size: 13px; color: var(--ink-soft);
     font-family: "IBM Plex Mono", ui-monospace, monospace;
@@ -193,7 +214,7 @@
   <header>
     <span class="kicker">Práctica de pronunciación</span>
     <h1>Cabina de voz</h1>
-    <p class="sub">Di la frase en voz alta. La cabina te muestra qué se entendió y te lo entrega listo para pegar en tu sesión de estudio.</p>
+    <p class="sub">Di la frase en voz alta. Tienes dos intentos: después te dejo oír las palabras que no se entendieron en ninguno, y quedan apuntadas como pendientes en tu estudio.</p>
   </header>
 
   <div class="msg bad" id="unsupported" hidden></div>
@@ -241,9 +262,22 @@
 
     <div class="msg warn" id="tip" hidden></div>
 
+    <div class="repaso" id="repaso" hidden>
+      <div class="repasoTitulo">
+        <span class="lbl">Se te acabaron los dos intentos</span>
+        <p class="hint" id="repasoNota"></p>
+      </div>
+      <div class="palabras" id="repasoLista"></div>
+      <div class="row">
+        <button class="act ghost" id="oirFrase" type="button">Oír la frase entera</button>
+      </div>
+      <div class="msg warn" id="sinVozCabina" hidden></div>
+    </div>
+
     <div class="row">
       <button class="act" id="copy" type="button" disabled>Copiar para el estudio</button>
-      <button class="act ghost" id="again" type="button" disabled>Intentar de nuevo</button>
+      <button class="act ghost" id="again" type="button" disabled>Segundo intento</button>
+      <button class="act ghost" id="nueva" type="button" hidden>Empezar con otra frase</button>
     </div>
   </section>
 
@@ -324,6 +358,40 @@
   var rec = null, listening = false, finalText = "", lastResult = null;
   var audioCtx = null, analyser = null, micStream = null, rafId = 0;
   var attempts = 0;
+
+  var MAX_INTENTOS = 2;
+  var intentos = [];   // [{ said: "...", r: {marcas, pct, ...} }]
+
+  var repasoEl = el("repaso"), repasoLista = el("repasoLista"), repasoNota = el("repasoNota"),
+      oirFraseBtn = el("oirFrase"), nuevaBtn = el("nueva"), sinVozCabina = el("sinVozCabina");
+
+  /* ---------- voz que lee ---------- */
+
+  function vozDe(lang) {
+    if (!("speechSynthesis" in window)) return null;
+    var vs = window.speechSynthesis.getVoices() || [];
+    var base = String(lang).slice(0, 2).toLowerCase();
+    var exacta = vs.filter(function (v) { return v.lang && v.lang.toLowerCase().replace("_", "-") === String(lang).toLowerCase(); });
+    var misma = vs.filter(function (v) { return v.lang && v.lang.slice(0, 2).toLowerCase() === base; });
+    return exacta[0] || misma[0] || null;
+  }
+
+  function leer(texto, rate) {
+    if (!("speechSynthesis" in window)) return;
+    window.speechSynthesis.cancel();
+    var u = new SpeechSynthesisUtterance(String(texto));
+    var v = vozDe(langSel.value);
+    if (v) { u.voice = v; u.lang = v.lang; } else { u.lang = langSel.value; }
+    u.rate = rate || 0.8;
+    window.speechSynthesis.speak(u);
+  }
+
+  function hayVoz() { return !!vozDe(langSel.value); }
+
+  if ("speechSynthesis" in window) {
+    window.speechSynthesis.getVoices();
+    window.speechSynthesis.onvoiceschanged = function () { /* se consultan al usarlas */ };
+  }
 
   /* ---------- utilidades de comparación ---------- */
 
@@ -417,7 +485,75 @@
     copyBtn.disabled = true;
     copyBtn.textContent = "Copiar para el estudio";
     againBtn.disabled = true;
-    stateEl.textContent = "Pulsa el botón y lee la frase en voz alta.";
+    stateEl.textContent = intentos.length
+      ? "Te queda un intento. Pulsa y vuelve a leerla."
+      : "Pulsa el botón y lee la frase en voz alta.";
+  }
+
+  function reiniciarTodo() {
+    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+    intentos = [];
+    repasoEl.hidden = true;
+    repasoLista.innerHTML = "";
+    nuevaBtn.hidden = true;
+    micBtn.disabled = false;
+    againBtn.textContent = "Segundo intento";
+    reset();
+  }
+
+  /* ---------- palabras que no pasaron en NINGÚN intento ---------- */
+
+  function noPasaronNunca() {
+    if (!intentos.length) return [];
+    var fallos = null;
+    intentos.forEach(function (it) {
+      var deEste = {};
+      it.r.marks.forEach(function (m) { if (!m.hit) deEste[m.word] = true; });
+      if (fallos === null) {
+        fallos = deEste;
+      } else {
+        Object.keys(fallos).forEach(function (w) { if (!deEste[w]) delete fallos[w]; });
+      }
+    });
+    return Object.keys(fallos || {});
+  }
+
+  function mostrarRepaso() {
+    var perdidas = noPasaronNunca();
+    var conVoz = hayVoz();
+
+    repasoNota.textContent = perdidas.length
+      ? "Estas son las palabras que no se entendieron en ninguno de los dos intentos. Óyelas, y quedan apuntadas como pendientes en tu estudio."
+      : "Todas tus palabras pasaron en alguno de los dos intentos. Nada que apuntar.";
+
+    repasoLista.innerHTML = "";
+    perdidas.forEach(function (w) {
+      var ficha = document.createElement("span");
+      ficha.className = "ficha";
+      var txt = document.createElement("span");
+      txt.textContent = w;
+      ficha.appendChild(txt);
+      if (conVoz) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.textContent = "oír";
+        b.addEventListener("click", function () { leer(w, 0.7); });
+        ficha.appendChild(b);
+      }
+      repasoLista.appendChild(ficha);
+    });
+
+    oirFraseBtn.hidden = !conVoz || !targetEl.value.trim();
+    sinVozCabina.hidden = conVoz;
+    if (!conVoz) {
+      sinVozCabina.innerHTML = "<b>No hay voz instalada para este idioma.</b> No puedo reproducirte las palabras, pero igual quedan apuntadas. En Windows: Configuración → Hora e idioma → Idioma y región → añade el idioma e instala su voz.";
+    }
+
+    repasoEl.hidden = false;
+    micBtn.disabled = true;
+    againBtn.disabled = true;
+    nuevaBtn.hidden = false;
+    stateEl.textContent = "Dos intentos hechos.";
   }
 
   function langName() {
@@ -509,11 +645,11 @@
     heardEl.textContent = said;
     stateEl.textContent = "Listo.";
     copyBtn.disabled = false;
-    againBtn.disabled = false;
     attempts++;
 
     if (target) {
       var r = compare(target, said);
+      intentos.push({ said: said, r: r });
       var tone = r.pct >= 85 ? "ok" : r.pct >= 60 ? "warn" : "bad";
       pctEl.dataset.t = tone;
       pctEl.textContent = r.hit + " de " + r.total + " palabras · " + r.pct + "%";
@@ -533,10 +669,28 @@
       verdictEl.hidden = false;
       lastResult = { target: target, said: said, r: r };
       addLog(said, r.pct);
+
+      if (intentos.length >= MAX_INTENTOS) {
+        mostrarRepaso();
+      } else {
+        againBtn.disabled = false;
+        againBtn.textContent = "Segundo intento";
+        stateEl.textContent = "Te queda un intento.";
+      }
     } else {
       verdictEl.hidden = true;
       lastResult = { target: "", said: said, r: null };
       addLog(said, null);
+      intentos.push({ said: said, r: null });
+      if (intentos.length >= MAX_INTENTOS) {
+        micBtn.disabled = true;
+        againBtn.disabled = true;
+        nuevaBtn.hidden = false;
+        stateEl.textContent = "Dos intentos hechos.";
+      } else {
+        againBtn.disabled = false;
+        stateEl.textContent = "Te queda un intento.";
+      }
     }
   }
 
@@ -558,20 +712,35 @@
 
   /* ---------- copiar ---------- */
 
+  function mejorIntento() {
+    var mejor = null;
+    intentos.forEach(function (it) {
+      if (!it.r) { if (!mejor) mejor = it; return; }
+      if (!mejor || !mejor.r || it.r.pct > mejor.r.pct) mejor = it;
+    });
+    return mejor;
+  }
+
   function buildReport() {
     if (!lastResult) return "";
     var lines = ["Ejercicio de pronunciación — " + langName()];
+
     if (lastResult.target) {
+      var mejor = mejorIntento() || lastResult;
+      var perdidas = noPasaronNunca();
+
       lines.push("Frase objetivo: " + lastResult.target);
-      lines.push("Lo que se entendió: " + lastResult.said);
-      var missed = lastResult.r.marks.filter(function (m) { return !m.hit; }).map(function (m) { return m.word; });
-      lines.push("Coincidencia: " + lastResult.r.hit + " de " + lastResult.r.total + " palabras (" + lastResult.r.pct + "%)");
-      lines.push("Palabras que no pasaron: " + (missed.length ? missed.join(", ") : "ninguna"));
+      intentos.forEach(function (it, i) {
+        lines.push("Intento " + (i + 1) + (it.r ? " (" + it.r.pct + "%)" : "") + ": " + it.said);
+      });
+      lines.push("Palabras que no pasaron en ningún intento: " + (perdidas.length ? perdidas.join(", ") : "ninguna"));
+      lines.push("#dicho: " + mejor.said);
+      lines.push("#nopasaron: " + perdidas.join(", "));
     } else {
-      lines.push("Habla libre. Lo que se entendió: " + lastResult.said);
+      lines.push("Habla libre.");
+      lines.push("#dicho: " + lastResult.said);
     }
-    lines.push("");
-    lines.push("Corrígeme la pronunciación a partir de esto y explícame en español qué falló.");
+
     return lines.join("\n");
   }
 
@@ -607,8 +776,16 @@
 
   micBtn.addEventListener("click", function () { if (listening) stop(); else start(); });
   againBtn.addEventListener("click", function () { reset(); start(); });
-  langSel.addEventListener("change", reset);
-  window.addEventListener("beforeunload", stopMeter);
+  nuevaBtn.addEventListener("click", function () { targetEl.value = ""; reiniciarTodo(); targetEl.focus(); });
+  oirFraseBtn.addEventListener("click", function () { leer(targetEl.value.trim(), 0.8); });
+  langSel.addEventListener("change", reiniciarTodo);
+  targetEl.addEventListener("input", function () {
+    if (intentos.length) reiniciarTodo();
+  });
+  window.addEventListener("beforeunload", function () {
+    stopMeter();
+    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+  });
 
   document.addEventListener("keydown", function (e) {
     if (e.code === "Space" && e.target === document.body) {
