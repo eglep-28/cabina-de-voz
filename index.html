@@ -1,0 +1,599 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cabina de voz</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --ground: #f4f6f6;
+    --panel: #ffffff;
+    --sunk: #eceff0;
+    --ink: #16211f;
+    --ink-soft: #5a6a68;
+    --ink-faint: #8b9998;
+    --line: #d8dfde;
+    --line-strong: #b9c4c3;
+    --accent: #0d6b6b;
+    --accent-ink: #ffffff;
+    --accent-soft: #d5e8e6;
+    --ok: #1c7a4a;
+    --ok-soft: #d6ece0;
+    --warn: #8a5a00;
+    --warn-soft: #f6e6c8;
+    --bad: #a33232;
+    --bad-soft: #f5dcda;
+    --live: #c2452f;
+    --shadow: 0 1px 2px rgba(16,40,38,.06), 0 8px 24px rgba(16,40,38,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #0e1615;
+      --panel: #16201f;
+      --sunk: #101917;
+      --ink: #e6edec;
+      --ink-soft: #9aabaa;
+      --ink-faint: #6e807f;
+      --line: #263332;
+      --line-strong: #3a4a48;
+      --accent: #4fd1c5;
+      --accent-ink: #0b1413;
+      --accent-soft: #16302e;
+      --ok: #62d29a;
+      --ok-soft: #142b21;
+      --warn: #e0b25e;
+      --warn-soft: #2d2416;
+      --bad: #ef8f86;
+      --bad-soft: #33191a;
+      --live: #f08573;
+      --shadow: 0 1px 2px rgba(0,0,0,.35), 0 8px 24px rgba(0,0,0,.28);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+    padding: 0 18px;
+    padding-block: 30px 56px;
+  }
+
+  .wrap { max-width: 600px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+
+  header { display: flex; flex-direction: column; gap: 6px; }
+  .kicker {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--accent); font-weight: 500;
+  }
+  h1 { margin: 0; font-size: 25px; line-height: 1.2; font-weight: 600; letter-spacing: -.015em; }
+  .sub { margin: 0; color: var(--ink-soft); font-size: 14px; max-width: 52ch; }
+
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 11px; box-shadow: var(--shadow);
+    padding: 17px; display: flex; flex-direction: column; gap: 13px;
+  }
+
+  label.field { display: flex; flex-direction: column; gap: 6px; }
+  .lbl {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11px; letter-spacing: .09em; text-transform: uppercase;
+    color: var(--ink-faint); font-weight: 500;
+  }
+  .hint { font-size: 13px; color: var(--ink-faint); margin: 0; }
+
+  select, textarea, input {
+    font: inherit; color: var(--ink); background: var(--sunk);
+    border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; width: 100%;
+  }
+  textarea { min-height: 64px; resize: vertical; line-height: 1.5; }
+  select:focus-visible, textarea:focus-visible, button:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
+
+  .controls { display: flex; flex-direction: column; align-items: center; gap: 13px; padding: 4px 0 2px; }
+
+  #mic {
+    width: 112px; height: 112px; border-radius: 50%;
+    border: none; cursor: pointer;
+    background: var(--accent); color: var(--accent-ink);
+    display: grid; place-items: center; gap: 2px;
+    font-weight: 600; font-size: 13px; line-height: 1.25; text-align: center;
+    box-shadow: 0 3px 14px rgba(13,107,107,.28);
+    transition: transform .12s ease, background .18s ease;
+  }
+  #mic:hover:not(:disabled) { transform: scale(1.03); }
+  #mic:active:not(:disabled) { transform: scale(.97); }
+  #mic:disabled { opacity: .4; cursor: not-allowed; box-shadow: none; }
+  #mic.live { background: var(--live); color: #fff; }
+  #mic svg { width: 27px; height: 27px; display: block; }
+
+  .meter {
+    width: 100%; max-width: 260px; height: 5px; border-radius: 99px;
+    background: var(--sunk); overflow: hidden; border: 1px solid var(--line);
+  }
+  .meter > i { display: block; height: 100%; width: 0%; background: var(--accent); transition: width .07s linear; }
+  #mic.live ~ .meter > i { background: var(--live); }
+
+  .state {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 12px; color: var(--ink-faint); min-height: 1.4em; text-align: center;
+  }
+
+  .heard {
+    background: var(--sunk); border: 1px solid var(--line); border-radius: 9px;
+    padding: 13px 14px; min-height: 74px;
+    font-size: 17px; line-height: 1.5;
+  }
+  .heard .placeholder { color: var(--ink-faint); font-size: 15px; }
+  .heard .interim { color: var(--ink-faint); }
+
+  .verdict { display: flex; flex-direction: column; gap: 9px; }
+  .bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .pct {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 12px; font-weight: 500; padding: 3px 9px; border-radius: 99px;
+    background: var(--sunk); color: var(--ink-faint); border: 1px solid var(--line);
+  }
+  .pct[data-t="ok"]   { background: var(--ok-soft);   color: var(--ok);   border-color: transparent; }
+  .pct[data-t="warn"] { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+  .pct[data-t="bad"]  { background: var(--bad-soft);  color: var(--bad);  border-color: transparent; }
+
+  .words { display: flex; flex-wrap: wrap; gap: 5px; }
+  .w { font-size: 15px; padding: 2px 7px; border-radius: 5px; background: var(--ok-soft); color: var(--ok); }
+  .w.miss { background: var(--bad-soft); color: var(--bad); text-decoration: underline; text-underline-offset: 3px; }
+
+  .row { display: flex; gap: 9px; flex-wrap: wrap; }
+  button.act {
+    font: inherit; font-size: 14px; font-weight: 500; cursor: pointer;
+    padding: 9px 15px; border-radius: 8px;
+    background: var(--accent); color: var(--accent-ink); border: 1px solid transparent;
+  }
+  button.act.ghost { background: transparent; color: var(--ink); border-color: var(--line-strong); }
+  button.act:hover { opacity: .87; }
+  button.act:disabled { opacity: .4; cursor: not-allowed; }
+
+  .msg { border-radius: 8px; padding: 11px 13px; font-size: 14px; line-height: 1.5; }
+  .msg.bad  { background: var(--bad-soft);  color: var(--bad); }
+  .msg.warn { background: var(--warn-soft); color: var(--warn); }
+  .msg b { font-weight: 600; }
+
+  details.log summary {
+    cursor: pointer; font-size: 13px; color: var(--ink-soft);
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+  }
+  .log ol { margin: 10px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 7px; }
+  .log li { font-size: 14px; color: var(--ink-soft); }
+  .log .said { color: var(--ink); }
+
+  footer { border-top: 1px solid var(--line); padding-top: 15px; }
+  footer p { margin: 0 0 7px; font-size: 12.5px; color: var(--ink-faint); line-height: 1.55; }
+  footer p:last-child { margin-bottom: 0; }
+  footer b { color: var(--ink-soft); font-weight: 500; }
+
+  [hidden] { display: none !important; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <header>
+    <span class="kicker">Práctica de pronunciación</span>
+    <h1>Cabina de voz</h1>
+    <p class="sub">Di la frase en voz alta. La cabina te muestra qué se entendió y te lo entrega listo para pegar en tu sesión de estudio.</p>
+  </header>
+
+  <div class="msg bad" id="unsupported" hidden></div>
+
+  <section class="card">
+    <label class="field">
+      <span class="lbl">Idioma</span>
+      <select id="lang">
+        <option value="en-US">Inglés (Estados Unidos)</option>
+        <option value="en-GB">Inglés (Reino Unido)</option>
+        <option value="it-IT">Italiano</option>
+      </select>
+    </label>
+
+    <label class="field">
+      <span class="lbl">Frase objetivo</span>
+      <textarea id="target" placeholder="Pega aquí la frase que te pidió el estudio. Si la dejas vacía, la cabina simplemente transcribe lo que digas."></textarea>
+    </label>
+  </section>
+
+  <section class="card">
+    <div class="controls">
+      <button id="mic" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true">
+          <rect x="9" y="2.5" width="6" height="11" rx="3"></rect>
+          <path d="M5.5 11a6.5 6.5 0 0 0 13 0"></path>
+          <path d="M12 17.5V21"></path>
+        </svg>
+        <span id="micLabel">Hablar</span>
+      </button>
+      <div class="meter" aria-hidden="true"><i id="level"></i></div>
+      <div class="state" id="state">Pulsa el botón y lee la frase en voz alta.</div>
+    </div>
+
+    <div class="heard" id="heard"><span class="placeholder">Aquí aparecerá lo que se entendió.</span></div>
+
+    <div class="verdict" id="verdict" hidden>
+      <div class="bar">
+        <span class="pct" id="pct">—</span>
+        <span class="hint" id="pctNote"></span>
+      </div>
+      <div class="words" id="words"></div>
+    </div>
+
+    <div class="msg warn" id="tip" hidden></div>
+
+    <div class="row">
+      <button class="act" id="copy" type="button" disabled>Copiar para el estudio</button>
+      <button class="act ghost" id="again" type="button" disabled>Intentar de nuevo</button>
+    </div>
+  </section>
+
+  <details class="log card" id="logCard" hidden>
+    <summary>Intentos de esta sesión (<span id="logCount">0</span>)</summary>
+    <ol id="logList"></ol>
+  </details>
+
+  <footer>
+    <p><b>Sobre tu privacidad.</b> Para convertir tu voz en texto, el navegador envía el audio a los servidores de su proveedor de reconocimiento. No digas información confidencial de tu empresa o de tus clientes.</p>
+    <p>Esta cabina no graba, no guarda y no envía nada a ningún otro sitio. Lo que ves aquí desaparece al cerrar la pestaña.</p>
+  </footer>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+
+  var el = function (id) { return document.getElementById(id); };
+  var micBtn = el("mic"), micLabel = el("micLabel"), stateEl = el("state"),
+      heardEl = el("heard"), verdictEl = el("verdict"), pctEl = el("pct"),
+      pctNote = el("pctNote"), wordsEl = el("words"), tipEl = el("tip"),
+      copyBtn = el("copy"), againBtn = el("again"), levelEl = el("level"),
+      langSel = el("lang"), targetEl = el("target"),
+      logCard = el("logCard"), logList = el("logList"), logCount = el("logCount");
+
+  if (location.protocol === "file:") {
+    var f = el("unsupported");
+    f.hidden = false;
+    f.innerHTML = "<b>Esta página está abierta desde tu disco duro.</b> Los navegadores no dan acceso al micrófono a un archivo abierto así (la dirección empieza con <code>file:///</code>), y ni siquiera te preguntan. Sube esta página a una dirección que empiece con <code>https://</code> y ábrela desde ahí.";
+    micBtn.disabled = true;
+    stateEl.textContent = "Micrófono no disponible desde un archivo local.";
+    return;
+  }
+
+  if (!SR) {
+    var u = el("unsupported");
+    u.hidden = false;
+    u.innerHTML = "<b>Este navegador no puede escuchar.</b> El reconocimiento de voz funciona en Chrome, Edge y Safari. Abre esta página en uno de ellos.";
+    micBtn.disabled = true;
+    stateEl.textContent = "Reconocimiento de voz no disponible.";
+    return;
+  }
+
+  if (!window.isSecureContext) {
+    var s = el("unsupported");
+    s.hidden = false;
+    s.innerHTML = "<b>Esta dirección no es segura.</b> El micrófono solo funciona en direcciones que empiezan con <code>https://</code>. Vuelve a abrir la página con <code>https</code>.";
+    micBtn.disabled = true;
+    stateEl.textContent = "Se necesita una dirección https.";
+    return;
+  }
+
+  var rec = null, listening = false, finalText = "", lastResult = null;
+  var audioCtx = null, analyser = null, micStream = null, rafId = 0;
+  var attempts = 0;
+
+  /* ---------- utilidades de comparación ---------- */
+
+  function tokens(s) {
+    return String(s)
+      .toLowerCase()
+      .replace(/[‘’]/g, "'")
+      .replace(/[^\p{L}\p{N}' ]/gu, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function compare(target, said) {
+    var want = tokens(target).split(" ").filter(Boolean);
+    var got = tokens(said).split(" ").filter(Boolean);
+    var pool = got.slice();
+    var marks = want.map(function (w) {
+      var i = pool.indexOf(w);
+      if (i > -1) { pool.splice(i, 1); return { word: w, hit: true }; }
+      return { word: w, hit: false };
+    });
+    var hit = marks.filter(function (m) { return m.hit; }).length;
+    return { marks: marks, hit: hit, total: want.length, pct: want.length ? Math.round(hit / want.length * 100) : 0 };
+  }
+
+  /* ---------- medidor de nivel ---------- */
+
+  function startMeter() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+      micStream = stream;
+      try {
+        var Ctx = window.AudioContext || window.webkitAudioContext;
+        audioCtx = new Ctx();
+        var src = audioCtx.createMediaStreamSource(stream);
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 512;
+        src.connect(analyser);
+        var buf = new Uint8Array(analyser.frequencyBinCount);
+        var tick = function () {
+          if (!analyser) return;
+          analyser.getByteTimeDomainData(buf);
+          var peak = 0;
+          for (var i = 0; i < buf.length; i++) {
+            var d = Math.abs(buf[i] - 128);
+            if (d > peak) peak = d;
+          }
+          var pctv = Math.min(100, Math.round(peak / 60 * 100));
+          levelEl.style.width = pctv + "%";
+          rafId = requestAnimationFrame(tick);
+        };
+        tick();
+      } catch (e) { /* el medidor es opcional */ }
+    }).catch(function () { /* el medidor es opcional */ });
+  }
+
+  function stopMeter() {
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = 0;
+    analyser = null;
+    levelEl.style.width = "0%";
+    if (audioCtx) { try { audioCtx.close(); } catch (e) {} audioCtx = null; }
+    if (micStream) { micStream.getTracks().forEach(function (t) { t.stop(); }); micStream = null; }
+  }
+
+  /* ---------- interfaz ---------- */
+
+  function setListening(on) {
+    listening = on;
+    micBtn.classList.toggle("live", on);
+    micLabel.textContent = on ? "Detener" : "Hablar";
+    langSel.disabled = on;
+    targetEl.disabled = on;
+  }
+
+  function showTip(kind, html) {
+    tipEl.hidden = false;
+    tipEl.className = "msg " + kind;
+    tipEl.innerHTML = html;
+  }
+
+  function clearTip() { tipEl.hidden = true; tipEl.innerHTML = ""; }
+
+  function reset() {
+    finalText = "";
+    lastResult = null;
+    heardEl.innerHTML = '<span class="placeholder">Aquí aparecerá lo que se entendió.</span>';
+    verdictEl.hidden = true;
+    wordsEl.innerHTML = "";
+    clearTip();
+    copyBtn.disabled = true;
+    copyBtn.textContent = "Copiar para el estudio";
+    againBtn.disabled = true;
+    stateEl.textContent = "Pulsa el botón y lee la frase en voz alta.";
+  }
+
+  function langName() {
+    return langSel.options[langSel.selectedIndex].text;
+  }
+
+  /* ---------- escucha ---------- */
+
+  function start() {
+    reset();
+    var target = targetEl.value.trim();
+
+    try { rec = new SR(); }
+    catch (e) {
+      showTip("bad", "<b>No se pudo iniciar el micrófono.</b> Recarga la página e inténtalo otra vez.");
+      return;
+    }
+
+    rec.lang = langSel.value;
+    rec.interimResults = true;
+    rec.continuous = target ? false : true;
+    rec.maxAlternatives = 1;
+
+    rec.onstart = function () {
+      setListening(true);
+      stateEl.textContent = target ? "Escuchando… di la frase." : "Escuchando… habla libremente y pulsa Detener al terminar.";
+      startMeter();
+    };
+
+    rec.onresult = function (ev) {
+      var interim = "";
+      for (var i = ev.resultIndex; i < ev.results.length; i++) {
+        var t = ev.results[i][0].transcript;
+        if (ev.results[i].isFinal) finalText += t; else interim += t;
+      }
+      var safe = document.createElement("span");
+      safe.textContent = finalText;
+      var itl = document.createElement("span");
+      itl.className = "interim";
+      itl.textContent = interim;
+      heardEl.innerHTML = "";
+      heardEl.appendChild(safe);
+      heardEl.appendChild(itl);
+    };
+
+    rec.onerror = function (ev) {
+      var code = ev.error || "unknown";
+      var map = {
+        "not-allowed": "<b>El navegador bloqueó el micrófono.</b> Busca el ícono a la izquierda de la dirección, pon el micrófono en «Permitir» y recarga.",
+        "service-not-allowed": "<b>El servicio de reconocimiento está bloqueado aquí.</b> Prueba abriendo esta página directamente en Chrome, no dentro de otra aplicación.",
+        "no-speech": "<b>No se detectó ninguna voz.</b> Acércate al micrófono y habla con normalidad, sin susurrar.",
+        "audio-capture": "<b>No se encontró micrófono.</b> Conecta uno o revisa cuál está seleccionado en tu sistema.",
+        "network": "<b>Falló la conexión.</b> El reconocimiento necesita internet. Revisa tu conexión y vuelve a intentar.",
+        "aborted": ""
+      };
+      var m = map.hasOwnProperty(code) ? map[code] : "<b>Algo falló:</b> " + code + ". Vuelve a intentar.";
+      if (m) showTip("bad", m);
+      stateEl.textContent = "Se detuvo.";
+    };
+
+    rec.onend = function () {
+      setListening(false);
+      stopMeter();
+      finish();
+    };
+
+    try { rec.start(); }
+    catch (e) {
+      setListening(false);
+      showTip("bad", "<b>El micrófono ya estaba en uso.</b> Espera un segundo y vuelve a pulsar.");
+    }
+  }
+
+  function stop() { if (rec) { try { rec.stop(); } catch (e) {} } }
+
+  function finish() {
+    var said = finalText.trim();
+    var target = targetEl.value.trim();
+
+    if (!said) {
+      if (tipEl.hidden) {
+        showTip("warn", "<b>No llegó nada legible.</b> Vuelve a intentar hablando un poco más fuerte y sin prisa. Si no aparece el medidor de nivel moviéndose, el micrófono no te está captando.");
+      }
+      againBtn.disabled = false;
+      stateEl.textContent = "Sin resultado.";
+      return;
+    }
+
+    heardEl.textContent = said;
+    stateEl.textContent = "Listo.";
+    copyBtn.disabled = false;
+    againBtn.disabled = false;
+    attempts++;
+
+    if (target) {
+      var r = compare(target, said);
+      var tone = r.pct >= 85 ? "ok" : r.pct >= 60 ? "warn" : "bad";
+      pctEl.dataset.t = tone;
+      pctEl.textContent = r.hit + " de " + r.total + " palabras · " + r.pct + "%";
+      pctNote.textContent = tone === "ok"
+        ? "Se te entendió casi todo."
+        : tone === "warn"
+          ? "Se perdieron algunas palabras."
+          : "Buena parte no se entendió. Vale la pena repetir.";
+      wordsEl.innerHTML = "";
+      r.marks.forEach(function (m) {
+        var s = document.createElement("span");
+        s.className = "w" + (m.hit ? "" : " miss");
+        s.textContent = m.word;
+        if (!m.hit) s.title = "No se entendió";
+        wordsEl.appendChild(s);
+      });
+      verdictEl.hidden = false;
+      lastResult = { target: target, said: said, r: r };
+      addLog(said, r.pct);
+    } else {
+      verdictEl.hidden = true;
+      lastResult = { target: "", said: said, r: null };
+      addLog(said, null);
+    }
+  }
+
+  function addLog(said, pct) {
+    logCard.hidden = false;
+    var li = document.createElement("li");
+    var sp = document.createElement("span");
+    sp.className = "said";
+    sp.textContent = said;
+    li.appendChild(sp);
+    if (pct !== null) {
+      var tag = document.createElement("span");
+      tag.textContent = "  · " + pct + "%";
+      li.appendChild(tag);
+    }
+    logList.insertBefore(li, logList.firstChild);
+    logCount.textContent = String(attempts);
+  }
+
+  /* ---------- copiar ---------- */
+
+  function buildReport() {
+    if (!lastResult) return "";
+    var lines = ["Ejercicio de pronunciación — " + langName()];
+    if (lastResult.target) {
+      lines.push("Frase objetivo: " + lastResult.target);
+      lines.push("Lo que se entendió: " + lastResult.said);
+      var missed = lastResult.r.marks.filter(function (m) { return !m.hit; }).map(function (m) { return m.word; });
+      lines.push("Coincidencia: " + lastResult.r.hit + " de " + lastResult.r.total + " palabras (" + lastResult.r.pct + "%)");
+      lines.push("Palabras que no pasaron: " + (missed.length ? missed.join(", ") : "ninguna"));
+    } else {
+      lines.push("Habla libre. Lo que se entendió: " + lastResult.said);
+    }
+    lines.push("");
+    lines.push("Corrígeme la pronunciación a partir de esto y explícame en español qué falló.");
+    return lines.join("\n");
+  }
+
+  copyBtn.addEventListener("click", function () {
+    var text = buildReport();
+    if (!text) return;
+    var done = function (ok) {
+      copyBtn.textContent = ok ? "Copiado ✓" : "No se pudo copiar";
+      setTimeout(function () { copyBtn.textContent = "Copiar para el estudio"; }, 2400);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { done(true); }, function () { fallbackCopy(text, done); });
+    } else {
+      fallbackCopy(text, done);
+    }
+  });
+
+  function fallbackCopy(text, done) {
+    var ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    var ok = false;
+    try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+    done(ok);
+  }
+
+  /* ---------- eventos ---------- */
+
+  micBtn.addEventListener("click", function () { if (listening) stop(); else start(); });
+  againBtn.addEventListener("click", function () { reset(); start(); });
+  langSel.addEventListener("change", reset);
+  window.addEventListener("beforeunload", stopMeter);
+
+  document.addEventListener("keydown", function (e) {
+    if (e.code === "Space" && e.target === document.body) {
+      e.preventDefault();
+      micBtn.click();
+    }
+  });
+})();
+</script>
+</body>
+</html>
