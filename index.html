@@ -166,6 +166,7 @@
   .msg { border-radius: 8px; padding: 11px 13px; font-size: 14px; line-height: 1.5; }
   .msg.bad  { background: var(--bad-soft);  color: var(--bad); }
   .msg.warn { background: var(--warn-soft); color: var(--warn); }
+  .msg.ok   { background: var(--ok-soft);   color: var(--ok); }
   .msg b { font-weight: 600; }
 
   details.log summary {
@@ -196,6 +197,7 @@
   </header>
 
   <div class="msg bad" id="unsupported" hidden></div>
+  <div class="msg ok" id="desdeEstudio" hidden></div>
 
   <section class="card">
     <label class="field">
@@ -297,6 +299,27 @@
     stateEl.textContent = "Se necesita una dirección https.";
     return;
   }
+
+  /* ---------- llegada desde el estudio ---------- */
+
+  (function leerParametros() {
+    try {
+      var p = new URLSearchParams(location.search);
+      var frase = p.get("frase");
+      var idioma = p.get("idioma");
+      if (idioma) {
+        for (var i = 0; i < langSel.options.length; i++) {
+          if (langSel.options[i].value === idioma) { langSel.selectedIndex = i; break; }
+        }
+      }
+      if (frase) {
+        targetEl.value = frase;
+        var aviso = document.getElementById("desdeEstudio");
+        aviso.hidden = false;
+        aviso.innerHTML = "<b>Frase enviada desde tu sesión de estudio.</b> Léela en voz alta, pulsa «Copiar para el estudio» y vuelve a la pestaña del estudio a pegarla.";
+      }
+    } catch (e) { /* sin parámetros, todo normal */ }
+  })();
 
   var rec = null, listening = false, finalText = "", lastResult = null;
   var audioCtx = null, analyser = null, micStream = null, rafId = 0;
