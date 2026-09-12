@@ -244,10 +244,10 @@
           <path d="M5.5 11a6.5 6.5 0 0 0 13 0"></path>
           <path d="M12 17.5V21"></path>
         </svg>
-        <span id="micLabel">Hablar</span>
+        <span id="micLabel">Empezar</span>
       </button>
       <div class="meter" aria-hidden="true"><i id="level"></i></div>
-      <div class="state" id="state">Pulsa el botón y lee la frase en voz alta.</div>
+      <div class="state" id="state">Pulsa «Empezar», lee la frase con calma, y pulsa «Ya terminé» al acabar.</div>
     </div>
 
     <div class="heard" id="heard"><span class="placeholder">Aquí aparecerá lo que se entendió.</span></div>
@@ -364,8 +364,12 @@
 
   var TOPE_INTENTOS = 6;   // freno para no dejar a nadie atrapado repitiendo
   var UMBRAL = 60;         // porcentaje a partir del cual se da por conseguido
+  var LIMITE_MS = 120000;  // dos minutos por intento: nadie se queda a medias de la frase
   var intentos = [];       // [{ said: "...", r: {marcas, pct, ...} }]
   var conseguido = false;
+  var deteniendo = false;  // true solo cuando el usuario pulsa «Ya terminé»
+  var arranque = 0;
+  var reloj = 0;
 
   var repasoEl = el("repaso"), repasoLista = el("repasoLista"), repasoNota = el("repasoNota"),
       oirFraseBtn = el("oirFrase"), nuevaBtn = el("nueva"), sinVozCabina = el("sinVozCabina");
@@ -467,9 +471,28 @@
   function setListening(on) {
     listening = on;
     micBtn.classList.toggle("live", on);
-    micLabel.textContent = on ? "Detener" : "Hablar";
+    micLabel.textContent = on ? "Ya terminé" : "Empezar";
     langSel.disabled = on;
     targetEl.disabled = on;
+  }
+
+  /* El reconocedor del navegador se corta solo en cuanto detecta una pausa.
+     Para quien habla despacio eso significa quedarse a medias de la frase,
+     así que lo levantamos otra vez por debajo y solo paramos cuando la
+     persona pulsa «Ya terminé» o se agotan los dos minutos. */
+
+  function arrancarReloj() {
+    pararReloj();
+    reloj = setInterval(function () {
+      var queda = LIMITE_MS - (Date.now() - arranque);
+      if (queda <= 0) { stop(); return; }
+      stateEl.textContent = "Escuchando… tómate tu tiempo (" + Math.ceil(queda / 1000) + " s). Pulsa «Ya terminé» al acabar.";
+    }, 1000);
+  }
+
+  function pararReloj() {
+    if (reloj) clearInterval(reloj);
+    reloj = 0;
   }
 
   function showTip(kind, html) {
@@ -491,8 +514,8 @@
     copyBtn.textContent = "Copiar para el estudio";
     againBtn.disabled = true;
     stateEl.textContent = intentos.length
-      ? "Vuelve a intentarlo: pulsa y léela otra vez."
-      : "Pulsa el botón y lee la frase en voz alta.";
+      ? "Vuelve a intentarlo: pulsa «Empezar» y léela otra vez con calma."
+      : "Pulsa «Empezar», lee la frase con calma, y pulsa «Ya terminé» al acabar.";
   }
 
   function reiniciarTodo() {
@@ -600,10 +623,19 @@
     }
 
     repasoEl.hidden = false;
-    micBtn.disabled = true;
-    againBtn.disabled = true;
     nuevaBtn.hidden = false;
-    stateEl.textContent = logrado ? "Conseguido." : "Hasta aquí por ahora.";
+
+    if (logrado) {
+      // Conseguido no significa cerrado: puede seguir puliéndola si quiere.
+      micBtn.disabled = false;
+      againBtn.disabled = false;
+      againBtn.textContent = "Seguir practicando";
+      stateEl.textContent = "Conseguido. Puedes copiarlo ya, o seguir practicando la frase.";
+    } else {
+      micBtn.disabled = true;
+      againBtn.disabled = true;
+      stateEl.textContent = "Hasta aquí por ahora. Copia el resultado y sigue con tu sesión.";
+    }
   }
 
   function langName() {
@@ -624,13 +656,17 @@
 
     rec.lang = langSel.value;
     rec.interimResults = true;
-    rec.continuous = target ? false : true;
+    rec.continuous = true;
     rec.maxAlternatives = 1;
+
+    deteniendo = false;
+    arranque = Date.now();
 
     rec.onstart = function () {
       setListening(true);
-      stateEl.textContent = target ? "Escuchando… di la frase." : "Escuchando… habla libremente y pulsa Detener al terminar.";
+      stateEl.textContent = "Escuchando… tómate tu tiempo. Pulsa «Ya terminé» al acabar.";
       startMeter();
+      arrancarReloj();
     };
 
     rec.onresult = function (ev) {
@@ -665,8 +701,13 @@
     };
 
     rec.onend = function () {
+      // Se cortó solo y la persona no ha terminado: lo levantamos otra vez.
+      if (!deteniendo && (Date.now() - arranque) < LIMITE_MS) {
+        try { rec.start(); return; } catch (e) { /* si no deja, terminamos abajo */ }
+      }
       setListening(false);
       stopMeter();
+      pararReloj();
       finish();
     };
 
@@ -677,7 +718,11 @@
     }
   }
 
-  function stop() { if (rec) { try { rec.stop(); } catch (e) {} } }
+  function stop() {
+    deteniendo = true;
+    pararReloj();
+    if (rec) { try { rec.stop(); } catch (e) {} }
+  }
 
   function finish() {
     var said = finalText.trim();
@@ -685,7 +730,7 @@
 
     if (!said) {
       if (tipEl.hidden) {
-        showTip("warn", "<b>No llegó nada legible.</b> Vuelve a intentar hablando un poco más fuerte y sin prisa. Si no aparece el medidor de nivel moviéndose, el micrófono no te está captando.");
+        showTip("warn", "<b>No llegó nada legible.</b> Vuelve a pulsar «Empezar» y habla un poco más fuerte, sin prisa. Si el medidor de nivel no se mueve mientras hablas, el micrófono no te está captando.");
       }
       againBtn.disabled = false;
       stateEl.textContent = "Sin resultado.";
